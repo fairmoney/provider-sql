@@ -115,8 +115,9 @@ func (c *connector) Connect(ctx context.Context, mg *namespacedv1alpha1.Role) (m
 }
 
 type external struct {
-	db   xsql.DB
-	kube client.Client
+	db                     xsql.DB
+	kube                   client.Client
+	observedConnectionLimit *int32
 }
 
 var _ managed.TypedExternalClient[*namespacedv1alpha1.Role] = &external{}
@@ -246,6 +247,8 @@ func (c *external) Observe(ctx context.Context, mg *namespacedv1alpha1.Role) (ma
 	// PrivilegesAsClauses is used as role status output
 	mg.Status.AtProvider.PrivilegesAsClauses = privilegesToClauses(observed.Privileges)
 
+	c.observedConnectionLimit = observed.ConnectionLimit
+
 	return managed.ExternalObservation{
 		ResourceExists:          true,
 		ResourceLateInitialized: lateInit(observed, &mg.Spec.ForProvider),
@@ -374,7 +377,7 @@ func (c *external) Update(ctx context.Context, mg *namespacedv1alpha1.Role) (man
 		mg.Status.AtProvider.ConfigurationParameters = mg.Spec.ForProvider.ConfigurationParameters
 	}
 	cl := mg.Spec.ForProvider.ConnectionLimit
-	if cl != nil {
+	if cl != nil && !ptrEqual(cl, c.observedConnectionLimit) {
 		if err := c.db.Exec(ctx, xsql.Query{
 			String: fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT %d", crn, int64(*cl)),
 		}); err != nil {
