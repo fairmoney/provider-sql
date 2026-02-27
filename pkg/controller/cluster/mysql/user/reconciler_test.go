@@ -319,6 +319,65 @@ func TestObserve(t *testing.T) {
 	}
 }
 
+func intPtr(v int) *int { return &v }
+
+func TestUpToDate(t *testing.T) {
+	cases := map[string]struct {
+		reason   string
+		observed *v1alpha1.UserParameters
+		desired  *v1alpha1.UserParameters
+		want     bool
+	}{
+		"NilDesiredResourceOptions": {
+			reason:   "Should return true when desired ResourceOptions is nil",
+			observed: &v1alpha1.UserParameters{ResourceOptions: &v1alpha1.ResourceOptions{MaxQueriesPerHour: intPtr(10)}},
+			desired:  &v1alpha1.UserParameters{ResourceOptions: nil},
+			want:     true,
+		},
+		"SameValuesDifferentPointers": {
+			reason: "Should return true when values match even though pointers differ (value comparison, not pointer)",
+			observed: &v1alpha1.UserParameters{ResourceOptions: &v1alpha1.ResourceOptions{
+				MaxQueriesPerHour:     intPtr(100),
+				MaxUpdatesPerHour:     intPtr(50),
+				MaxConnectionsPerHour: intPtr(25),
+				MaxUserConnections:    intPtr(10),
+			}},
+			desired: &v1alpha1.UserParameters{ResourceOptions: &v1alpha1.ResourceOptions{
+				MaxQueriesPerHour:     intPtr(100),
+				MaxUpdatesPerHour:     intPtr(50),
+				MaxConnectionsPerHour: intPtr(25),
+				MaxUserConnections:    intPtr(10),
+			}},
+			want: true,
+		},
+		"DifferentValues": {
+			reason: "Should return false when values differ",
+			observed: &v1alpha1.UserParameters{ResourceOptions: &v1alpha1.ResourceOptions{
+				MaxQueriesPerHour:     intPtr(100),
+				MaxUpdatesPerHour:     intPtr(50),
+				MaxConnectionsPerHour: intPtr(25),
+				MaxUserConnections:    intPtr(10),
+			}},
+			desired: &v1alpha1.UserParameters{ResourceOptions: &v1alpha1.ResourceOptions{
+				MaxQueriesPerHour:     intPtr(200),
+				MaxUpdatesPerHour:     intPtr(50),
+				MaxConnectionsPerHour: intPtr(25),
+				MaxUserConnections:    intPtr(10),
+			}},
+			want: false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := upToDate(tc.observed, tc.desired)
+			if got != tc.want {
+				t.Errorf("\n%s\nupToDate(): got %v, want %v", tc.reason, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCreate(t *testing.T) {
 	errBoom := errors.New("boom")
 

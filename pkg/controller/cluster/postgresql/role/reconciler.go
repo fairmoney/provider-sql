@@ -131,8 +131,9 @@ func (c *connector) Connect(ctx context.Context, mg *v1alpha1.Role) (managed.Typ
 }
 
 type external struct {
-	db   xsql.DB
-	kube client.Client
+	db                     xsql.DB
+	kube                   client.Client
+	observedConnectionLimit *int32
 }
 
 var _ managed.TypedExternalClient[*v1alpha1.Role] = &external{}
@@ -262,6 +263,8 @@ func (c *external) Observe(ctx context.Context, mg *v1alpha1.Role) (managed.Exte
 	// PrivilegesAsClauses is used as role status output
 	mg.Status.AtProvider.PrivilegesAsClauses = privilegesToClauses(observed.Privileges)
 
+	c.observedConnectionLimit = observed.ConnectionLimit
+
 	return managed.ExternalObservation{
 		ResourceExists:          true,
 		ResourceLateInitialized: lateInit(observed, &mg.Spec.ForProvider),
@@ -390,7 +393,7 @@ func (c *external) Update(ctx context.Context, mg *v1alpha1.Role) (managed.Exter
 		mg.Status.AtProvider.ConfigurationParameters = mg.Spec.ForProvider.ConfigurationParameters
 	}
 	cl := mg.Spec.ForProvider.ConnectionLimit
-	if cl != nil {
+	if cl != nil && !ptrEqual(cl, c.observedConnectionLimit) {
 		if err := c.db.Exec(ctx, xsql.Query{
 			String: fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT %d", crn, int64(*cl)),
 		}); err != nil {
@@ -415,29 +418,39 @@ func (c *external) Delete(ctx context.Context, mg *v1alpha1.Role) (managed.Exter
 	return managed.ExternalDelete{}, errors.Wrap(err, errDropRole)
 }
 
+func ptrEqual[T comparable](a, b *T) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
 func upToDate(observed *v1alpha1.RoleParameters, desired *v1alpha1.RoleParameters) bool {
-	if observed.ConnectionLimit != desired.ConnectionLimit {
+	if !ptrEqual(observed.ConnectionLimit, desired.ConnectionLimit) {
 		return false
 	}
-	if observed.Privileges.SuperUser != desired.Privileges.SuperUser {
+	if !ptrEqual(observed.Privileges.SuperUser, desired.Privileges.SuperUser) {
 		return false
 	}
-	if observed.Privileges.Inherit != desired.Privileges.Inherit {
+	if !ptrEqual(observed.Privileges.Inherit, desired.Privileges.Inherit) {
 		return false
 	}
-	if observed.Privileges.CreateDb != desired.Privileges.CreateDb {
+	if !ptrEqual(observed.Privileges.CreateDb, desired.Privileges.CreateDb) {
 		return false
 	}
-	if observed.Privileges.CreateRole != desired.Privileges.CreateRole {
+	if !ptrEqual(observed.Privileges.CreateRole, desired.Privileges.CreateRole) {
 		return false
 	}
-	if observed.Privileges.Login != desired.Privileges.Login {
+	if !ptrEqual(observed.Privileges.Login, desired.Privileges.Login) {
 		return false
 	}
-	if observed.Privileges.Replication != desired.Privileges.Replication {
+	if !ptrEqual(observed.Privileges.Replication, desired.Privileges.Replication) {
 		return false
 	}
-	if observed.Privileges.BypassRls != desired.Privileges.BypassRls {
+	if !ptrEqual(observed.Privileges.BypassRls, desired.Privileges.BypassRls) {
 		return false
 	}
 	if !cmp.Equal(observed.ConfigurationParameters, desired.ConfigurationParameters,

@@ -309,6 +309,38 @@ func TestObserve(t *testing.T) {
 				err: nil,
 			},
 		},
+		"ConnectionLimitMatchesDB": {
+			reason: "We should return ResourceUpToDate=true when connectionLimit matches the DB value (value comparison, not pointer)",
+			fields: fields{
+				db: mockDB{
+					MockScan: func(ctx context.Context, q xsql.Query, dest ...interface{}) error {
+						// dest[7] is &observed.ConnectionLimit (**int32)
+						connLimit := dest[7].(**int32)
+						v := int32(-1)
+						*connLimit = &v
+						return nil
+					},
+				},
+			},
+			args: args{
+				mg: &v1alpha1.Role{
+					Spec: v1alpha1.RoleSpec{
+						ForProvider: v1alpha1.RoleParameters{
+							Privileges:      v1alpha1.RolePrivilege{},
+							ConnectionLimit: ptr.To(int32(-1)),
+						},
+					},
+				},
+			},
+			want: want{
+				o: managed.ExternalObservation{
+					ResourceExists:          true,
+					ResourceUpToDate:        true,
+					ResourceLateInitialized: true,
+				},
+				err: nil,
+			},
+		},
 		"ConfigurationParametersChanged": {
 			reason: "We should return ResourceUpToDate=false if ConfigurationParameter is changed",
 			fields: fields{
@@ -525,7 +557,8 @@ func TestUpdate(t *testing.T) {
 	errBoom := errors.New("boom")
 
 	type fields struct {
-		db xsql.DB
+		db                      xsql.DB
+		observedConnectionLimit *int32
 	}
 
 	type args struct {
@@ -955,6 +988,72 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{},
 		},
+		"NoUpdateConnectionLimitUnchanged": {
+			reason: "We should not execute ALTER ROLE CONNECTION LIMIT when the value matches the observed DB value",
+			fields: fields{
+				db: &mockDB{
+					MockExec: func(ctx context.Context, q xsql.Query) error {
+						crn := pq.QuoteIdentifier("example")
+						if q.String == fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT -1", crn) {
+							return errBoom
+						}
+						return nil
+					},
+				},
+				observedConnectionLimit: ptr.To(int32(-1)),
+			},
+			args: args{
+				mg: &v1alpha1.Role{
+					ObjectMeta: v1.ObjectMeta{
+						Annotations: map[string]string{
+							meta.AnnotationKeyExternalName: "example",
+						},
+					},
+					Spec: v1alpha1.RoleSpec{
+						ForProvider: v1alpha1.RoleParameters{
+							ConnectionLimit: ptr.To(int32(-1)),
+						},
+					},
+				},
+			},
+			want: want{
+				err: nil,
+				c:   managed.ExternalUpdate{},
+			},
+		},
+		"UpdateConnectionLimitChanged": {
+			reason: "We should execute ALTER ROLE CONNECTION LIMIT when the value differs from the observed DB value",
+			fields: fields{
+				db: &mockDB{
+					MockExec: func(ctx context.Context, q xsql.Query) error {
+						crn := pq.QuoteIdentifier("example")
+						if q.String != fmt.Sprintf("ALTER ROLE %s CONNECTION LIMIT 100", crn) {
+							return errBoom
+						}
+						return nil
+					},
+				},
+				observedConnectionLimit: ptr.To(int32(-1)),
+			},
+			args: args{
+				mg: &v1alpha1.Role{
+					ObjectMeta: v1.ObjectMeta{
+						Annotations: map[string]string{
+							meta.AnnotationKeyExternalName: "example",
+						},
+					},
+					Spec: v1alpha1.RoleSpec{
+						ForProvider: v1alpha1.RoleParameters{
+							ConnectionLimit: ptr.To(int32(100)),
+						},
+					},
+				},
+			},
+			want: want{
+				err: nil,
+				c:   managed.ExternalUpdate{},
+			},
+		},
 		"NoUpdateQueryNoChangedConfigurationParameters": {
 			reason: "We should not execute an SQL query if configuration parameters are unchanged.",
 			fields: fields{
@@ -1029,8 +1128,9 @@ func TestUpdate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				db:   tc.fields.db,
-				kube: tc.args.kube,
+				db:                      tc.fields.db,
+				kube:                    tc.args.kube,
+				observedConnectionLimit: tc.fields.observedConnectionLimit,
 			}
 			got, err := e.Update(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {

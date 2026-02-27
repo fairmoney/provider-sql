@@ -27,6 +27,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	zapcore "go.uber.org/zap/zapcore"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	xpcontroller "github.com/crossplane/crossplane-runtime/v2/pkg/controller"
@@ -57,6 +58,11 @@ func main() {
 		// *very* verbose even at info level, so we only provide it a real
 		// logger when we're running in debug mode.
 		ctrl.SetLogger(zl)
+	} else {
+		// controller-runtime v0.22+ warns if SetLogger is never called.
+		// Register a warn-level logger to silence the warning while still
+		// suppressing the verbose info-level output.
+		ctrl.SetLogger(zap.New(zap.Level(zapcore.WarnLevel)))
 	}
 
 	log.Debug("Starting", "sync-period", syncPeriod.String())
