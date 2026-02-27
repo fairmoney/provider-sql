@@ -309,6 +309,38 @@ func TestObserve(t *testing.T) {
 				err: nil,
 			},
 		},
+		"ConnectionLimitMatchesDB": {
+			reason: "We should return ResourceUpToDate=true when connectionLimit matches the DB value (value comparison, not pointer)",
+			fields: fields{
+				db: mockDB{
+					MockScan: func(ctx context.Context, q xsql.Query, dest ...interface{}) error {
+						// dest[7] is &observed.ConnectionLimit (**int32)
+						connLimit := dest[7].(**int32)
+						v := int32(-1)
+						*connLimit = &v
+						return nil
+					},
+				},
+			},
+			args: args{
+				mg: &v1alpha1.Role{
+					Spec: v1alpha1.RoleSpec{
+						ForProvider: v1alpha1.RoleParameters{
+							Privileges:      v1alpha1.RolePrivilege{},
+							ConnectionLimit: ptr.To(int32(-1)),
+						},
+					},
+				},
+			},
+			want: want{
+				o: managed.ExternalObservation{
+					ResourceExists:          true,
+					ResourceUpToDate:        true,
+					ResourceLateInitialized: true,
+				},
+				err: nil,
+			},
+		},
 		"ConfigurationParametersChanged": {
 			reason: "We should return ResourceUpToDate=false if ConfigurationParameter is changed",
 			fields: fields{

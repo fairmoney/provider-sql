@@ -343,21 +343,31 @@ func (c *external) Delete(ctx context.Context, mg *namespacedv1alpha1.User) (man
 	return managed.ExternalDelete{}, nil
 }
 
+func ptrEqual[T comparable](a, b *T) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
 func upToDate(observed *namespacedv1alpha1.UserParameters, desired *namespacedv1alpha1.UserParameters) bool {
 	if desired.ResourceOptions == nil {
 		// Return true if there are no desired ResourceOptions
 		return true
 	}
-	if observed.ResourceOptions.MaxQueriesPerHour != desired.ResourceOptions.MaxQueriesPerHour {
+	if !ptrEqual(observed.ResourceOptions.MaxQueriesPerHour, desired.ResourceOptions.MaxQueriesPerHour) {
 		return false
 	}
-	if observed.ResourceOptions.MaxUpdatesPerHour != desired.ResourceOptions.MaxUpdatesPerHour {
+	if !ptrEqual(observed.ResourceOptions.MaxUpdatesPerHour, desired.ResourceOptions.MaxUpdatesPerHour) {
 		return false
 	}
-	if observed.ResourceOptions.MaxConnectionsPerHour != desired.ResourceOptions.MaxConnectionsPerHour {
+	if !ptrEqual(observed.ResourceOptions.MaxConnectionsPerHour, desired.ResourceOptions.MaxConnectionsPerHour) {
 		return false
 	}
-	if observed.ResourceOptions.MaxUserConnections != desired.ResourceOptions.MaxUserConnections {
+	if !ptrEqual(observed.ResourceOptions.MaxUserConnections, desired.ResourceOptions.MaxUserConnections) {
 		return false
 	}
 	return true
